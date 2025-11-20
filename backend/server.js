@@ -12,7 +12,7 @@ const MONGO_URI = 'mongodb+srv://root:200561409@watchparty.uvlzbiv.mongodb.net/?
 
 // ------------------- 中间件配置 -------------------
 app.use(cors({
-    origin: 'https://watch-party-three-lac.vercel.app/', 
+    origin: 'https://watch-party-three-lac.vercel.app', 
     credentials: true, // 允许携带 cookies 或 headers（如JWT Token）
 }));
 app.use(express.json()); // 允许解析 JSON 请求体
