@@ -10,7 +10,7 @@ const jellyfinRoute = require('./routes/jellyfin');
 
 const app = express();
 const PORT = 3001;
-const MONGO_URI = 'mongodb+srv://root:200561409@watchparty.uvlzbiv.mongodb.net/?appName=WatchParty'; // 请替换为你的数据库地址！
+const MONGO_URI = process.env.MONGODB_URI || 'mongodb+srv://root:200561409@watchparty.uvlzbiv.mongodb.net/?appName=WatchParty'; // 请替换为你的数据库地址！
 
 // ------------------- 中间件配置 -------------------
 app.use(cors({
