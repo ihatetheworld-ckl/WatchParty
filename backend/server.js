@@ -8,7 +8,7 @@ const authRoutes = require('./src/routes/authRoutes');
 
 const app = express();
 const PORT = 3001;
-const MONGO_URI = 'mongodb://localhost:27017/SyncCinemaDB'; // 请替换为你的数据库地址！
+const MONGO_URI = 'mongodb+srv://root:ckl@200561409@watchparty.uvlzbiv.mongodb.net/?appName=WatchParty'; // 请替换为你的数据库地址！
 
 // ------------------- 中间件配置 -------------------
 app.use(cors({
