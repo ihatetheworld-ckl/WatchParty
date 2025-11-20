@@ -1,5 +1,13 @@
 <template>
   <Auth :show="showAuth" @auth-success="handleAuthSuccess" />
+  
+  <JellyfinLibrary 
+    v-if="showLibrary" 
+    :isOpen="showLibrary" 
+    @close="showLibrary = false" 
+    @select="handleMovieSelect"
+  />
+
   <div class="app-container" v-if="isLoggedIn">
     <header class="header">
       <h1>🎬 SyncCinema </h1>
@@ -14,8 +22,9 @@
     <main class="main-content">
       <div class="video-section">
         <div v-if="isJoined" class="url-input-group">
-          <input v-model="videoUrl" placeholder="粘贴视频链接 (Jellyfin 或 MP4 直链)" class="input-dark full-width" />
-          <button @click="changeVideo" class="btn-secondary">切换视频</button>
+          <input v-model="videoUrl" placeholder="粘贴链接 或 点击右侧选择" class="input-dark full-width" />
+          <button @click="changeVideo" class="btn-secondary">加载链接</button>
+          <button @click="showLibrary = true" class="btn-primary" style="background-color: #28a745;">📂 选择影片</button>
         </div>
 
         <div v-if="isJoined" class="player-wrapper">
@@ -72,10 +81,15 @@
 import { ref, onMounted, reactive } from 'vue';
 import io from 'socket.io-client';
 import VideoPlayer from './components/VideoPlayer.vue';
-import Auth from './components/Auth.vue'; // ✨ 新增导入
+import Auth from './components/Auth.vue';
+// ✨ 新增导入：Jellyfin 影库组件
+import JellyfinLibrary from './components/JellyfinLibrary.vue'; 
+
+// 🚨 请确保这里是你的 Render 后端地址，与 socket.io 连接地址一致
+const BACKEND_URL = 'https://watchparty-nhd0.onrender.com';
 
 // --- 认证状态 ---
-const showAuth = ref(true); // 默认显示认证模态框
+const showAuth = ref(true); 
 const isLoggedIn = ref(false);
 const user = reactive({
     username: '',
@@ -86,16 +100,17 @@ const user = reactive({
 const socket = ref(null);
 const isConnected = ref(false);
 const isJoined = ref(false);
-const roomId = ref('1001'); // 默认房间号
-const logs = reactive([]); // 使用 reactive 存储日志数组
+const roomId = ref('1001'); 
+const logs = reactive([]); 
 
 // 聊天相关状态
 const chatInput = ref('');
-const chatType = ref('chat'); // 'chat' 或 'danmaku'
-//const username = ref('用户' + Math.floor(Math.random() * 900 + 100)); // 随机用户名
+const chatType = ref('chat'); 
+// ✨ 新增状态：控制影库显示
+const showLibrary = ref(false); 
 
 // 播放器状态
-const videoUrl = ref('https://artplayer.org/assets/sample/video.mp4'); // 默认测试链接
+const videoUrl = ref('https://artplayer.org/assets/sample/video.mp4'); 
 const playerOption = ref({
   url: videoUrl.value,
   volume: 0.5,
@@ -110,14 +125,27 @@ const handleAuthSuccess = (authData) => {
     user.token = authData.token;
     isLoggedIn.value = true;
     showAuth.value = false;
-    // 确保聊天室使用正确的用户名
     addLog(`欢迎回来，${user.username}！`, 'system');
+};
+
+// --- 影片选择处理 (关键新增逻辑) ---
+const handleMovieSelect = (url, name) => {
+    // 1. 更新输入框显示的 URL
+    videoUrl.value = url;
+    // 2. 更新播放器配置
+    playerOption.value.url = url;
+    // 3. 记录日志
+    addLog(`已选择影片: ${name}`, 'system');
+    // 4. 发送给服务器和其他人同步 (如果已经在房间里)
+    if (isJoined.value) {
+        socket.value.emit('change_video', { roomId: roomId.value, url: url });
+    }
 };
 
 // --- 生命周期与连接 ---
 onMounted(() => {
-  // 连接后端 (注意：生产环境需要改为你的云服务器IP或域名)
-  socket.value = io('https://watchparty-nhd0.onrender.com');
+  // 连接后端 (使用常量)
+  socket.value = io(BACKEND_URL);
 
   socket.value.on('connect', () => {
     isConnected.value = true;
@@ -129,12 +157,19 @@ onMounted(() => {
     addLog('与服务器断开连接', 'system');
   });
   
-  // 监听各种同步消息用于打印日志
+  // 监听同步消息用于打印日志
   socket.value.on('sync_play', () => addLog('收到: 播放指令', 'system'));
   socket.value.on('sync_pause', () => addLog('收到: 暂停指令', 'system'));
   socket.value.on('sync_seek', (d) => addLog(`收到: 跳转 ${d.currentTime.toFixed(1)}s`, 'system'));
 
-  // ✨ 新增: 检查本地是否有 Token
+  // ✨ 新增：监听切换视频消息
+  socket.value.on('change_video', (data) => {
+      videoUrl.value = data.url;
+      playerOption.value.url = data.url;
+      addLog('房主切换了视频', 'system');
+  });
+
+  // 检查本地是否有 Token (保留原有逻辑)
     const savedToken = localStorage.getItem('userToken');
     if (savedToken) {
         // 这里应该调用API验证Token，但我们先简化为直接显示登录界面
@@ -148,14 +183,11 @@ const joinRoom = () => {
   
   if (!roomId.value) return alert('请输入房间号');
   
-  // ✨ 新增诊断：打印 socket 的连接状态
   const isCurrentlyConnected = socket.value ? socket.value.connected : false;
   console.log('Socket.io 状态 (Connected?):', isCurrentlyConnected);
   
-  
   if (!isCurrentlyConnected) {
     console.error('Socket 未连接，无法加入房间');
-    // 强制提醒用户稍等
     return alert('未连接到服务器 (状态灯为红色)，请稍等或检查网络。');
   }
     
@@ -167,6 +199,8 @@ const joinRoom = () => {
 const changeVideo = () => {
   playerOption.value.url = videoUrl.value; 
   addLog('切换视频源', 'system');
+  // ✨ 修正：视频源切换时，同步给房间内所有人
+  socket.value.emit('change_video', { roomId: roomId.value, url: videoUrl.value }); 
 };
 
 const sendMessage = () => {
@@ -179,24 +213,18 @@ const sendMessage = () => {
         type: chatType.value,
     };
 
-    // 1. 发送给服务器
     socket.value.emit('send_message', data);
-    
-    // 2. 本地也显示 (因为服务器使用 socket.to 不会发给自己)
     handlePlayerMessage(data); 
 
-    chatInput.value = ''; // 清空输入框
+    chatInput.value = ''; 
 };
 
-// 处理来自播放器组件（接收自 Socket）或本地发送的消息
 const handlePlayerMessage = (data) => {
     addLog(data.message, data.type, data.username);
 };
 
-// 日志辅助函数
 const addLog = (text, type = 'system', user = '系统') => {
     const time = new Date().toLocaleTimeString();
-    // 使用 push，然后反向显示，确保新消息在底部
     logs.push({
         text: text,
         time: time,
@@ -212,7 +240,7 @@ body { margin: 0; background-color: #121212; color: #eee; font-family: sans-seri
 </style>
 
 <style scoped>
-/* 局部样式 */
+/* 局部样式 - 保持原有样式，仅为新增元素提供排版支持 */
 .app-container { max-width: 1400px; margin: 0 auto; padding: 20px; }
 .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 .status-indicator { display: inline-block; width: 10px; height: 10px; background: red; border-radius: 50%; margin-right: 10px; }
@@ -223,12 +251,13 @@ body { margin: 0; background-color: #121212; color: #eee; font-family: sans-seri
 .input-dark { background: #2a2a2a; border: 1px solid #444; color: white; padding: 8px 12px; border-radius: 4px; outline: none; transition: border-color 0.2s; }
 .input-dark:focus { border-color: #007bff; }
 .full-width { flex: 1; }
-.btn-primary { background: #007bff; color: white; border: none; padding: 8px 20px; border-radius: 4px; cursor: pointer; transition: background 0.2s; }
+.btn-primary { background: #007bff; color: white; border: none; padding: 8px 20px; border-radius: 4px; cursor: pointer; transition: background 0.2s; margin-left: 10px; }
 .btn-primary:hover { background: #0056b3; }
-.btn-secondary { background: #444; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; transition: background 0.2s; }
+.btn-secondary { background: #444; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; transition: background 0.2s; margin-left: 10px; }
 .btn-secondary:hover { background: #555; }
 
 .video-section { display: flex; flex-direction: column; gap: 15px; }
+/* 确保按钮和输入框能并排显示 */
 .url-input-group { display: flex; gap: 10px; }
 .player-wrapper { width: 100%; }
 
@@ -251,7 +280,7 @@ body { margin: 0; background-color: #121212; color: #eee; font-family: sans-seri
     display: flex; 
     flex-direction: column; 
     padding-right: 5px;
-    justify-content: flex-end; /* 新消息在下方 */
+    justify-content: flex-end; 
 }
 
 .msg-item { 
@@ -261,7 +290,7 @@ body { margin: 0; background-color: #121212; color: #eee; font-family: sans-seri
 .msg-time { color: #888; margin-right: 5px; font-size: 11px; }
 .user-name { font-weight: bold; color: #50b0ff; }
 .system .msg-content { color: #aaa; }
-.danmaku-msg .user-name { color: #fcc419; } /* 弹幕消息用户高亮 */
+.danmaku-msg .user-name { color: #fcc419; } 
 
 .input-area { 
     display: flex; 
