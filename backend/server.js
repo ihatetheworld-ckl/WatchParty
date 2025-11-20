@@ -6,7 +6,7 @@ const http = require('http');
 // 导入路由和控制器
 const authRoutes = require('./src/routes/authRoutes'); 
 // ✨ 新增：引入 Jellyfin 路由
-const jellyfinRoute = require('./routes/jellyfin');
+const jellyfinRoute = require('./src/routes/jellyfin');
 
 const app = express();
 const PORT = 3001;
