@@ -58,8 +58,31 @@ router.get('/movies', async (req, res) => {
         res.json(movies);
 
     } catch (error) {
-        console.error('Jellyfin API Error:', error.message);
-        res.status(500).json({ error: 'Failed to fetch movies from Jellyfin' });
+        
+        console.error('--- Jellyfin API Request Failed ---');
+        
+        if (error.response) {
+            // 請求已發出，但伺服器返回的狀態碼不在 2xx 範圍內 (即 403)
+            console.error('Response Status:', error.response.status); 
+            
+            // 💡 關鍵：Jellyfin 在 403 時可能會返回一個描述錯誤原因的 JSON 或文字
+            console.error('Response Data:', error.response.data); 
+            
+            // 打印出完整的請求 URL (檢查 UserID 是否包含在內)
+            console.error('Request URL:', error.config.url); 
+            console.error('API Key Header:', error.config.headers['X-Emby-Token'] ? 'Token已設置' : 'Token缺失');
+        } else if (error.request) {
+            // 請求已發出，但沒有收到回應 (如果不是 403，這可能是網路問題)
+            console.error('No response received:', error.request);
+        } else {
+            // 設置請求時觸發的錯誤
+            console.error('Error setting up request:', error.message);
+        }
+        
+        console.error('-----------------------------------');
+
+        // 返回 500 錯誤給前端
+        res.status(500).json({ error: 'Failed to fetch movies from Jellyfin (Check Server Logs)' });
     }
 });
 
