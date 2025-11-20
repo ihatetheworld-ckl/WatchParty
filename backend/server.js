@@ -5,6 +5,8 @@ const http = require('http');
 
 // 导入路由和控制器
 const authRoutes = require('./src/routes/authRoutes'); 
+// ✨ 新增：引入 Jellyfin 路由
+const jellyfinRoute = require('./routes/jellyfin');
 
 const app = express();
 const PORT = 3001;
@@ -19,6 +21,8 @@ app.use(express.json()); // 允许解析 JSON 请求体
 
 // ------------------- 路由配置 -------------------
 app.use('/api/auth', authRoutes); // 将所有 /api/auth 请求转发给认证路由
+// ✨ 新增：注册 Jellyfin 路由
+app.use('/api/jellyfin', jellyfinRoute);
 
 // ------------------- 数据库连接 -------------------
 mongoose.connect(MONGO_URI)
