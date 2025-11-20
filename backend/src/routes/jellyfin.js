@@ -41,7 +41,9 @@ router.get('/movies', async (req, res) => {
             // 构建图片 URL (前端直接用)
             imageUrl: `${JELLYFIN_URL}/Items/${item.Id}/Images/Primary?maxHeight=400&tag=${item.ImageTags.Primary}`,
             // 构建视频播放直链 (关键！)
-            streamUrl: `${JELLYFIN_URL}/Videos/${item.Id}/stream.mp4?static=true&api_key=${API_KEY}`,
+            // 去掉 static=true (允许转码)，并限制最大码率为 3000000 (3Mbps)
+            // 3Mbps 足够 720P 或低码率 1080P 流畅播放
+            streamUrl: `${JELLYFIN_URL}/Videos/${item.Id}/stream.mp4?api_key=${API_KEY}&videoCodec=h264&audioCodec=aac&maxBitrate=3000000&transcodingContainer=mp4`,
             overview: item.Overview
         }));
 
