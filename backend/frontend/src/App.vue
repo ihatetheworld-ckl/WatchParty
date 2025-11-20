@@ -117,7 +117,7 @@ const handleAuthSuccess = (authData) => {
 // --- 生命周期与连接 ---
 onMounted(() => {
   // 连接后端 (注意：生产环境需要改为你的云服务器IP或域名)
-  socket.value = io('http://localhost:3001');
+  socket.value = io('https://watchparty-nhd0.onrender.com');
 
   socket.value.on('connect', () => {
     isConnected.value = true;

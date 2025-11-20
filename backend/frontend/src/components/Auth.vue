@@ -50,7 +50,7 @@ const password = ref('');
 const message = ref('');
 const isError = ref(false);
 
-const API_BASE = 'http://localhost:3001/api/auth';
+const API_BASE = 'https://watchparty-nhd0.onrender.com';
 
 // ------------------- 方法 -------------------
 
