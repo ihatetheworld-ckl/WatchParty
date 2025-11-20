@@ -9,10 +9,18 @@ const USER_ID = process.env.JELLYFIN_USER_ID;
 
 // 获取电影列表 API
 router.get('/movies', async (req, res) => {
-    // 简单的错误检查
+    // ✨ 将变量读取移到路由函数内部
+    const JELLYFIN_URL = process.env.JELLYFIN_SERVER_URL;
+    const API_KEY = process.env.JELLYFIN_API_KEY;
+    const USER_ID = process.env.JELLYFIN_USER_ID;
+
+    // 这一段代码是关键！它会准确告诉你哪个变量是空的。
     if (!JELLYFIN_URL || !API_KEY || !USER_ID) {
-        console.error('Jellyfin 环境变量缺失');
-        return res.status(500).json({ error: 'Server configuration error' });
+        console.error('❌ Jellyfin 配置缺失！');
+        console.error(`Jellyfin URL: ${JELLYFIN_URL ? '已设置' : '未设置'}`);
+        console.error(`API Key: ${API_KEY ? '已设置' : '未设置'}`);
+        console.error(`User ID: ${USER_ID ? '已设置' : '未设置'}`);
+        return res.status(500).json({ error: 'Server configuration error' }); 
     }
 
     try {
