@@ -29,7 +29,7 @@ router.get('/movies', async (req, res) => {
             }
         });
 
-        // 💡 返回 Type 供前端区分 Movie/Series，并移除 streamUrl
+        // 返回 Type 供前端区分 Movie/Series
         const items = response.data.Items.map(item => ({
             id: item.Id,
             name: item.Name,
@@ -41,14 +41,12 @@ router.get('/movies', async (req, res) => {
         res.json(items);
 
     } catch (error) {
-        // ... (错误日志保持不变)
         console.error('--- Jellyfin API Request Failed ---');
-        // ... (详细错误打印)
         res.status(500).json({ error: 'Failed to fetch movies from Jellyfin (Check Server Logs)' });
     }
 });
 
-// 💡 获取剧集下的所有单集路由
+// 获取剧集下的所有单集路由
 router.get('/episodes/:seriesId', async (req, res) => {
     const { seriesId } = req.params;
     
@@ -66,19 +64,18 @@ router.get('/episodes/:seriesId', async (req, res) => {
             params: {
                 UserId: USER_ID,
                 Recursive: true,
-                Fields: 'Overview,ParentIndexNumber,IndexNumber,SeriesName', // 获取季号、集号和剧集名
+                Fields: 'Overview,ParentIndexNumber,IndexNumber,SeriesName', 
                 Limit: 100, 
             }
         });
 
-        // 格式化单集数据 (注意：单集 Type 是 Episode)
         const episodes = response.data.Items.map(item => ({
             id: item.Id,
             name: item.Name,
             type: item.Type, 
             seriesName: item.SeriesName,
-            seasonNumber: item.ParentIndexNumber, // 季号
-            episodeNumber: item.IndexNumber, // 集号
+            seasonNumber: item.ParentIndexNumber,
+            episodeNumber: item.IndexNumber,
             imageUrl: `${JELLYFIN_URL}/Items/${item.Id}/Images/Primary?maxHeight=400&tag=${item.ImageTags ? item.ImageTags.Primary : ''}`,
             overview: item.Overview || ''
         }));
@@ -92,7 +89,9 @@ router.get('/episodes/:seriesId', async (req, res) => {
 });
 
 
-// 💡 新增：直接流式传输视频内容的路由，支持 Range Request (视频播放器会直接请求这个 URL)
+// ------------------------------------------------
+// 💡 核心修复：Range Request 代理路由
+// ------------------------------------------------
 router.get('/stream/:itemId/video', async (req, res) => {
     const { itemId } = req.params;
 
@@ -101,61 +100,86 @@ router.get('/stream/:itemId/video', async (req, res) => {
     const USER_ID = process.env.JELLYFIN_USER_ID;
 
     if (!JELLYFIN_URL || !API_KEY || !USER_ID) {
-        // 使用 send 发送纯文本，避免 JSON 响应体导致浏览器报错
         return res.status(500).send('Server configuration error: Jellyfin credentials missing.');
     }
 
     // 1. 构建 Jellyfin 的实际视频流 URL
-    // 使用 .mp4 后缀和转码参数，确保 Jellyfin 返回流式文件
+    // 使用 .mp4 后缀和转码参数
     const jellyfinStreamUrl = 
-        `${JELLYFIN_URL}/Videos/${itemId}/stream.mp4?api_key=${API_KEY}&UserId=${USER_ID}&videoCodec=h264&audioCodec=aac&maxBitrate=3000000&transcodingContainer=mp4`;
+        `${JELLYFIN_URL}/Videos/${itemId}/stream.mp4?api_key=${API_KEY}&UserId=${USER_ID}&videoCodec=h264&audioCodec=aac&maxBitrate=3000000&transcodingContainer=mp4&AddTranscodeTimestamp=true`;
 
     // 2. 准备请求头，将客户端发来的 Range Header 转发给 Jellyfin
-    const headers = {
+    const headersToForward = {
         'X-Emby-Token': API_KEY, // Jellyfin 认证
-        // 💡 关键：转发 Range header，使其支持跳播
-        ...(req.headers.range && { 'Range': req.headers.range }) 
     };
+    
+    // 💡 关键：转发 Range Header
+    if (req.headers.range) {
+        headersToForward['Range'] = req.headers.range;
+        // 打印 Range Header 方便你在 Render Log 中调试
+        console.log(`[Stream Proxy] Forwarding Range Header: ${req.headers.range}`); 
+    } else {
+        console.log('[Stream Proxy] No Range Header in request.');
+    }
 
     try {
         // 3. 使用 axios 发送流式请求到 Jellyfin
         const streamResponse = await axios({
             method: 'get',
             url: jellyfinStreamUrl,
-            headers: headers,
-            responseType: 'stream' // 必须是 'stream'
+            headers: headersToForward,
+            responseType: 'stream',
+            maxRedirects: 0 
         });
 
-        // 4. 将 Jellyfin 返回的 Headers 转发给客户端
-        // 💡 关键：转发 Content-Length, Content-Range, Content-Type, Accept-Ranges 等
-        res.writeHead(streamResponse.status, streamResponse.headers);
+        // 4. 获取 Jellyfin 返回的 Headers
+        const responseHeaders = streamResponse.headers;
+        
+        // 💡 关键修正：强制添加 Accept-Ranges: bytes
+        // 即使 Jellyfin 没有返回，我们也手动添加，告诉播放器服务器支持范围请求
+        if (!responseHeaders['accept-ranges']) {
+            responseHeaders['accept-ranges'] = 'bytes'; 
+        }
 
-        // 5. 将 Jellyfin 的响应流 pipe 到客户端
+        // 5. 转发 Headers
+        res.writeHead(streamResponse.status, responseHeaders);
+
+        // 6. 将 Jellyfin 的响应流 pipe 到客户端
         streamResponse.data.pipe(res);
 
+        // 💡 监听错误和结束事件，确保连接被妥善关闭
+        streamResponse.data.on('error', (err) => {
+             console.error('[Stream Proxy] Stream pipe error:', err.message);
+             if (!res.headersSent) {
+                 res.status(500).send('Stream pipe error.');
+             } else {
+                 res.end(); // 尝试关闭连接
+             }
+        });
+
     } catch (error) {
-        console.error('Jellyfin Stream Proxy Error:', error.message);
+        console.error('--- Jellyfin Stream Proxy Error ---');
         if (error.response) {
-            // 将 Jellyfin 返回的错误状态码和消息传回
+            console.error(`Status: ${error.response.status}, Range: ${req.headers.range}`);
             res.status(error.response.status).send(error.response.data);
         } else {
-            res.status(500).send('Failed to stream video.');
+            console.error('Network or timeout error:', error.message);
+            res.status(500).send('Failed to stream video (Network or Timeout).');
         }
     }
 });
 
 
-// 💡 修改：/stream/:itemId 路由现在只返回新的代理流 URL
+// /stream/:itemId 路由现在只返回新的代理流 URL
 router.get('/stream/:itemId', (req, res) => {
     const { itemId } = req.params;
     
     // ⚠️ 确保这里的 URL 与 App.vue 中的 BACKEND_URL 一致
     const BACKEND_URL = 'https://watchparty-nhd0.onrender.com';
     
-    // 返回新的代理流 URL
+    // 返回新的代理流 URL，它就是播放器实际请求的地址
     const streamProxyUrl = `${BACKEND_URL}/api/jellyfin/stream/${itemId}/video`;
     
-    // 返回包含代理 URL 的 JSON 对象给前端
     res.json({ url: streamProxyUrl });
 });
 
