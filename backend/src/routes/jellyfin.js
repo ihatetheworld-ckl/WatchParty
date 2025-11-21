@@ -34,7 +34,7 @@ router.get('/movies', async (req, res) => {
             },
             params: {
                 Recursive: true,
-                IncludeItemTypes: 'Movie',
+                IncludeItemTypes: 'Movie,Series',
                 SortBy: 'DateCreated',
                 SortOrder: 'Descending', // 最新的在前面
                 Limit: 50, // 限制返回 50 部，防止数据量太大
