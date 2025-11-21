@@ -11,7 +11,7 @@
       <div v-if="loading" class="loading">
         加载中...
       </div>
-      
+
       <div v-else-if="currentSeriesId" class="episode-view">
         <div class="episode-header">
             <h3>{{ currentSeriesName }} - 剧集列表</h3>
@@ -20,10 +20,10 @@
         
         <div class="movie-grid">
             <div 
-                v-for="item in episodes" 
+                v-for="(item, index) in episodes" 
                 :key="item.id" 
                 class="movie-card" 
-                @click="selectItem(item)"
+                @click="selectItem(item, index)"
             >
                 <div class="poster-wrapper">
                     <img :src="item.imageUrl" :alt="item.name" loading="lazy" />
@@ -60,6 +60,7 @@
 import { ref, onMounted } from 'vue';
 
 const props = defineProps(['isOpen']);
+// 💡 修改 emit 事件，使其能传递更多数据给 App.vue
 const emit = defineEmits(['close', 'select']);
 
 // 🚨 请替换为你的 Render 后端地址 (与 App.vue 中保持一致)
@@ -82,7 +83,6 @@ const fetchLibrary = async () => {
   try {
     const res = await fetch(`${BACKEND_URL}/api/jellyfin/movies`);
     if (!res.ok) throw new Error('获取失败');
-    // 💡 确保 items 列表始终包含电影和剧集
     items.value = await res.json();
   } catch (err) {
     console.error(err);
@@ -92,7 +92,7 @@ const fetchLibrary = async () => {
   }
 };
 
-// 💡 新增：获取剧集下的所有单集
+// 💡 获取剧集下的所有单集
 const fetchEpisodes = async (seriesId, seriesName) => {
     loading.value = true;
     try {
@@ -101,6 +101,7 @@ const fetchEpisodes = async (seriesId, seriesName) => {
         
         const data = await res.json();
         
+        // 更新状态：设置当前剧集ID，并填充单集列表
         currentSeriesId.value = seriesId;
         currentSeriesName.value = seriesName;
         episodes.value = data.episodes;
@@ -112,23 +113,20 @@ const fetchEpisodes = async (seriesId, seriesName) => {
     }
 };
 
-// 💡 新增：获取播放流 URL 并播放
-const getStreamAndPlay = async (itemId, itemName) => {
+// 💡 获取播放流 URL (调用代理路由)
+const getStreamUrl = async (itemId) => {
     try {
         const res = await fetch(`${BACKEND_URL}/api/jellyfin/stream/${itemId}`);
         if (!res.ok) throw new Error('Failed to get stream URL');
         
         const data = await res.json();
-        
-        // 将完整的 URL 传回给 App.vue
-        emit('select', data.url, itemName);
-        close();
+        return data.url; // 返回代理 URL
     } catch (error) {
         console.error('Get Stream URL Error:', error);
         alert('无法获取播放流，请检查 Jellyfin 服务和网络。');
+        return null;
     }
 };
-
 
 const close = () => emit('close');
 
@@ -139,22 +137,36 @@ const backToLibrary = () => {
     currentSeriesName.value = '';
 }
 
-// 💡 核心逻辑：处理点击事件 (无论是媒体库主项还是单集)
-const selectItem = (item) => {
+// 💡 核心逻辑：处理点击事件
+const selectItem = async (item, index = -1) => {
     // 1. 如果是剧集 (Series)，则进入选集视图
     if (item.type === 'Series') {
         fetchEpisodes(item.id, item.name);
+        return;
     } 
+    
     // 2. 如果是电影 (Movie) 或单集 (Episode)，则获取播放流并播放
-    else if (item.type === 'Movie' || item.type === 'Episode') {
-        getStreamAndPlay(item.id, item.name);
-    }
-    // 忽略 Season, BoxSet 等其他类型
+    const streamUrl = await getStreamUrl(item.id);
+    if (!streamUrl) return;
+
+    // 3. 准备 emit 数据，用于 App.vue 接收和处理自动下一集逻辑
+    let payload = {
+        url: streamUrl,
+        name: item.name,
+        // 只有在播放单集时，才携带播放列表信息
+        playlist: item.type === 'Episode' ? episodes.value : [], // 传递完整的 episode object list
+        currentIndex: index, // 播放列表中的索引
+    };
+
+    // 将完整的 URL 和播放列表信息传回给 App.vue
+    emit('select', payload);
+    close();
 };
+
 </script>
 
 <style scoped>
-/* 样式保持不变，但新增 episode-header 样式 */
+/* 样式保持不变 */
 .library-overlay {
   position: fixed; top: 0; left: 0; right: 0; bottom: 0;
   background: rgba(0, 0, 0, 0.85);

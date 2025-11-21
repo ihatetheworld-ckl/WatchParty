@@ -19,6 +19,11 @@ app.use(cors({
 }));
 app.use(express.json()); // 允许解析 JSON 请求体
 
+// 💡 修复 Cannot GET /：添加一个根路由，解决 Render 上的健康检查错误
+app.get('/', (req, res) => {
+    res.send('SyncCinema Backend is running.');
+});
+
 // ------------------- 路由配置 -------------------
 app.use('/api/auth', authRoutes); // 将所有 /api/auth 请求转发给认证路由
 // ✨ 新增：注册 Jellyfin 路由

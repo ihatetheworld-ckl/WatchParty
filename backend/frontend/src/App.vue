@@ -1,3 +1,5 @@
+// 文件: frontend/src/App.vue
+
 <template>
   <Auth :show="showAuth" @auth-success="handleAuthSuccess" />
   
@@ -33,6 +35,7 @@
             :socket="socket" 
             :roomId="roomId" 
             @onMessage="handlePlayerMessage"
+            @ended="handleVideoEnded"
           />
         </div>
         
@@ -109,6 +112,10 @@ const chatType = ref('chat');
 // ✨ 新增状态：控制影库显示
 const showLibrary = ref(false); 
 
+// 💡 自动下一集所需状态
+const currentPlaylist = ref([]); // 播放列表 ([{ id, name, ... }])
+const currentEpisodeIndex = ref(-1); // 当前播放的单集在列表中的索引
+
 // 播放器状态
 const videoUrl = ref('https://artplayer.org/assets/sample/video.mp4'); 
 const playerOption = ref({
@@ -129,16 +136,64 @@ const handleAuthSuccess = (authData) => {
 };
 
 // --- 影片选择处理 (关键新增逻辑) ---
-const handleMovieSelect = (url, name) => {
-    // 1. 更新输入框显示的 URL
+// 💡 接收来自 JellyfinLibrary 的完整 payload
+const handleMovieSelect = (payload) => {
+    const { url, name, playlist, currentIndex } = payload;
+    
+    // 1. 更新播放器 URL
     videoUrl.value = url;
-    // 2. 更新播放器配置
     playerOption.value.url = url;
+    
+    // 2. 更新播放列表状态
+    currentPlaylist.value = playlist || [];
+    currentEpisodeIndex.value = currentIndex;
+    
     // 3. 记录日志
     addLog(`已选择影片: ${name}`, 'system');
-    // 4. 发送给服务器和其他人同步 (如果已经在房间里)
+    
+    // 4. 发送给服务器和其他人同步 
     if (isJoined.value) {
         socket.value.emit('change_video', { roomId: roomId.value, url: url });
+    }
+    showLibrary.value = false; // 关闭模态框
+};
+
+// 💡 自动下一集逻辑 (假设 VideoPlayer 组件在播放结束时发出 @ended 事件)
+const handleVideoEnded = () => {
+    // 只有房主/主动播放者才进行自动切换，并通知房间同步
+    if (!isJoined.value) return; 
+
+    // 检查是否正在播放剧集，并且是否还有下一集
+    if (currentPlaylist.value.length > 0 && currentEpisodeIndex.value >= 0) {
+        const nextIndex = currentEpisodeIndex.value + 1;
+        
+        if (nextIndex < currentPlaylist.value.length) {
+            const nextEpisode = currentPlaylist.value[nextIndex];
+            
+            // 调用后端 API 获取下一集的代理 URL
+            fetch(`${BACKEND_URL}/api/jellyfin/stream/${nextEpisode.id}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.url) {
+                         // 切换视频并同步
+                        videoUrl.value = data.url;
+                        playerOption.value.url = data.url;
+                        socket.value.emit('change_video', { roomId: roomId.value, url: data.url });
+                        
+                        currentEpisodeIndex.value = nextIndex;
+                        addLog(`自动切换到下一集: ${nextEpisode.name}`, 'system');
+                    }
+                })
+                .catch(err => {
+                    console.error('Auto Next Episode Fetch Error:', err);
+                    addLog('自动切换下一集失败', 'system');
+                });
+            
+        } else {
+            addLog('剧集播放完毕。', 'system');
+            currentPlaylist.value = []; // 清空播放列表
+            currentEpisodeIndex.value = -1;
+        }
     }
 };
 
@@ -162,10 +217,13 @@ onMounted(() => {
   socket.value.on('sync_pause', () => addLog('收到: 暂停指令', 'system'));
   socket.value.on('sync_seek', (d) => addLog(`收到: 跳转 ${d.currentTime.toFixed(1)}s`, 'system'));
 
-  // ✨ 新增：监听切换视频消息
+  // ✨ 监听切换视频消息
   socket.value.on('change_video', (data) => {
       videoUrl.value = data.url;
       playerOption.value.url = data.url;
+      // 被动接收切换时，清空播放列表状态
+      currentPlaylist.value = []; 
+      currentEpisodeIndex.value = -1;
       addLog('房主切换了视频', 'system');
   });
 
@@ -199,8 +257,12 @@ const joinRoom = () => {
 const changeVideo = () => {
   playerOption.value.url = videoUrl.value; 
   addLog('切换视频源', 'system');
-  // ✨ 修正：视频源切换时，同步给房间内所有人
+  // ✨ 视频源切换时，同步给房间内所有人
   socket.value.emit('change_video', { roomId: roomId.value, url: videoUrl.value }); 
+  
+  // 手动切换时，清除播放列表状态
+  currentPlaylist.value = [];
+  currentEpisodeIndex.value = -1;
 };
 
 const sendMessage = () => {
@@ -220,7 +282,12 @@ const sendMessage = () => {
 };
 
 const handlePlayerMessage = (data) => {
-    addLog(data.message, data.type, data.username);
+    // 确保处理来自 socket.io 的消息
+    if (data.message && data.type && data.username) {
+        addLog(data.message, data.type, data.username);
+    } else if (data.text) { // 处理日志消息
+         addLog(data.text, data.type, data.username);
+    } 
 };
 
 const addLog = (text, type = 'system', user = '系统') => {
