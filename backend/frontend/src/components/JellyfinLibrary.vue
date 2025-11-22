@@ -1,5 +1,3 @@
-// 文件: frontend/src/components/JellyfinLibrary.vue
-
 <template>
   <div v-if="isOpen" class="library-overlay">
     <div class="library-modal">
@@ -11,44 +9,23 @@
       <div v-if="loading" class="loading">
         加载中...
       </div>
-
-      <div v-else-if="currentSeriesId" class="episode-view">
-        <div class="episode-header">
-            <h3>{{ currentSeriesName }} - 剧集列表</h3>
-            <button @click="backToLibrary" class="btn-secondary">← 返回媒体库</button>
-        </div>
-        
-        <div class="movie-grid">
-            <div 
-                v-for="(item, index) in episodes" 
-                :key="item.id" 
-                class="movie-card" 
-                @click="selectItem(item, index)"
-            >
-                <div class="poster-wrapper">
-                    <img :src="item.imageUrl" :alt="item.name" loading="lazy" />
-                    <div class="play-icon">▶</div>
-                </div>
-                <div class="movie-info">
-                    <h3>S{{ item.seasonNumber || '?' }}E{{ item.episodeNumber || '?' }} - {{ item.name }}</h3>
-                </div>
-            </div>
-        </div>
+      <div v-else-if="loadError" class="loading" style="color: red;">
+        加载失败：{{ loadError }}
       </div>
 
       <div v-else class="movie-grid">
         <div 
-          v-for="item in items" 
-          :key="item.id" 
+          v-for="movie in movies" 
+          :key="movie.id" 
           class="movie-card" 
-          @click="selectItem(item)"
+          @click="selectMovie(movie)"
         >
           <div class="poster-wrapper">
-            <img :src="item.imageUrl" :alt="item.name" loading="lazy" />
-            <div class="play-icon">{{ item.type === 'Series' ? '📂' : '▶' }}</div>
+            <img :src="movie.imageUrl" :alt="movie.name" loading="lazy" />
+            <div class="play-icon">▶</div>
           </div>
           <div class="movie-info">
-            <h3>{{ item.name }} ({{ item.type === 'Series' ? '剧集' : '电影' }})</h3>
+            <h3>{{ movie.name }}</h3>
           </div>
         </div>
       </div>
@@ -60,113 +37,73 @@
 import { ref, onMounted } from 'vue';
 
 const props = defineProps(['isOpen']);
-// 💡 修改 emit 事件，使其能传递更多数据给 App.vue
 const emit = defineEmits(['close', 'select']);
 
-// 🚨 请替换为你的 Render 后端地址 (与 App.vue 中保持一致)
-const BACKEND_URL = 'http://13.158.77.147:3001';
+// 🚨 已替换为你的 云服务器 公网 IP 和端口！
+const BACKEND_URL = 'http://13.158.77.147:3001'; // <--- 已替换为你的 IP
 
-const items = ref([]); // 存储 movies 和 series
-const episodes = ref([]); // 存储当前剧集的单集列表
-const currentSeriesId = ref(null); 
-const currentSeriesName = ref(''); 
+const movies = ref([]);
 const loading = ref(true);
+const loadError = ref(null);
 
 onMounted(async () => {
-  // 仅在组件挂载时加载一次数据
-  await fetchLibrary();
+  // 仅在打开时加载，但放在 mounted 中确保只加载一次
+  if (props.isOpen) {
+      await fetchMovies();
+  }
 });
 
-// 独立函数：获取媒体库
-const fetchLibrary = async () => {
+const fetchMovies = async () => {
   loading.value = true;
+  loadError.value = null;
   try {
     const res = await fetch(`${BACKEND_URL}/api/jellyfin/movies`);
-    if (!res.ok) throw new Error('获取失败');
-    items.value = await res.json();
+    if (!res.ok) throw new Error('获取影库列表失败');
+    movies.value = await res.json();
   } catch (err) {
     console.error(err);
-    alert('无法加载影库，请检查后端连接或 Jellyfin 配置');
+    loadError.value = '无法加载影库，请检查后端连接或 Jellyfin 配置。';
+    // alert(loadError.value); // 避免重复弹出
   } finally {
     loading.value = false;
   }
 };
 
-// 💡 获取剧集下的所有单集
-const fetchEpisodes = async (seriesId, seriesName) => {
+
+const close = () => {
+    // 每次关闭后，如果再次打开需要重新加载（可选）
+    // emit('close');
+    emit('close');
+};
+
+
+const selectMovie = async (movie) => {
     loading.value = true;
+    loadError.value = null;
+
     try {
-        const res = await fetch(`${BACKEND_URL}/api/jellyfin/episodes/${seriesId}`);
-        if (!res.ok) throw new Error('Failed to fetch episodes');
+        // 1. 通过新的 API 路由获取流 URL (使用 movie.id)
+        const res = await fetch(`${BACKEND_URL}/api/jellyfin/stream/${movie.id}`);
+        if (!res.ok) throw new Error('获取影片流直链失败');
         
         const data = await res.json();
+        const streamUrl = data.url; // 从后端获取流 URL
+
+        // 2. 将直链和影片名传回给 App.vue
+        emit('select', streamUrl, movie.name);
+        close();
         
-        // 更新状态：设置当前剧集ID，并填充单集列表
-        currentSeriesId.value = seriesId;
-        currentSeriesName.value = seriesName;
-        episodes.value = data.episodes;
-    } catch (error) {
-        console.error('Fetch Episodes Error:', error);
-        alert('无法加载单集列表，请检查后端路由是否正确。');
+    } catch (err) {
+        console.error('选择影片失败:', err);
+        alert('无法获取影片流地址，请检查 Jellyfin 服务和后端日志。');
     } finally {
         loading.value = false;
     }
 };
-
-// 💡 获取播放流 URL (调用代理路由)
-const getStreamUrl = async (itemId) => {
-    try {
-        const res = await fetch(`${BACKEND_URL}/api/jellyfin/stream/${itemId}`);
-        if (!res.ok) throw new Error('Failed to get stream URL');
-        
-        const data = await res.json();
-        return data.url; // 返回代理 URL
-    } catch (error) {
-        console.error('Get Stream URL Error:', error);
-        alert('无法获取播放流，请检查 Jellyfin 服务和网络。');
-        return null;
-    }
-};
-
-const close = () => emit('close');
-
-// 💡 返回媒体库主视图
-const backToLibrary = () => {
-    currentSeriesId.value = null;
-    episodes.value = [];
-    currentSeriesName.value = '';
-}
-
-// 💡 核心逻辑：处理点击事件
-const selectItem = async (item, index = -1) => {
-    // 1. 如果是剧集 (Series)，则进入选集视图
-    if (item.type === 'Series') {
-        fetchEpisodes(item.id, item.name);
-        return;
-    } 
-    
-    // 2. 如果是电影 (Movie) 或单集 (Episode)，则获取播放流并播放
-    const streamUrl = await getStreamUrl(item.id);
-    if (!streamUrl) return;
-
-    // 3. 准备 emit 数据，用于 App.vue 接收和处理自动下一集逻辑
-    let payload = {
-        url: streamUrl,
-        name: item.name,
-        // 只有在播放单集时，才携带播放列表信息
-        playlist: item.type === 'Episode' ? episodes.value : [], // 传递完整的 episode object list
-        currentIndex: index, // 播放列表中的索引
-    };
-
-    // 将完整的 URL 和播放列表信息传回给 App.vue
-    emit('select', payload);
-    close();
-};
-
 </script>
 
 <style scoped>
-/* 样式保持不变 */
+/* (样式代码保持不变) */
 .library-overlay {
   position: fixed; top: 0; left: 0; right: 0; bottom: 0;
   background: rgba(0, 0, 0, 0.85);
@@ -183,15 +120,10 @@ const selectItem = async (item, index = -1) => {
   box-shadow: 0 0 20px rgba(0,0,0,0.5);
 }
 
-.library-header, .episode-header {
+.library-header {
   display: flex; justify-content: space-between; align-items: center;
   margin-bottom: 20px; border-bottom: 1px solid #333; padding-bottom: 10px;
 }
-
-.episode-header h3 { margin: 0; }
-.btn-secondary { background: #444; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; transition: background 0.2s; }
-.btn-secondary:hover { background: #555; }
-
 
 .close-btn {
   background: none; border: none; color: #fff; font-size: 30px; cursor: pointer;
