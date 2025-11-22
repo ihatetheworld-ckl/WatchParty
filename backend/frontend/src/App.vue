@@ -64,7 +64,6 @@ import Auth from './components/Auth.vue';
 import JellyfinLibrary from './components/JellyfinLibrary.vue';
 
 // 🚨 已替换为你的 云服务器 公网 IP 和端口！
-// 此 URL 用于 Socket.IO 连接和 Auth 组件的 API 调用
 const BACKEND_URL = 'http://13.158.77.147:3001'; 
 
 // --- 认证状态 ---
@@ -203,7 +202,7 @@ onMounted(() => {
 </script>
 
 <style>
-/* (样式代码保持不变) */
+/* 完整的样式代码 */
 :root {
   --primary-color: #007bff;
   --bg-color: #121212;

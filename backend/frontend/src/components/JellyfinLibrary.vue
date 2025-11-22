@@ -40,41 +40,34 @@ const props = defineProps(['isOpen']);
 const emit = defineEmits(['close', 'select']);
 
 // 🚨 已替换为你的 云服务器 公网 IP 和端口！
-const BACKEND_URL = 'http://13.158.77.147:3001'; // <--- 已替换为你的 IP
+const BACKEND_URL = 'http://13.158.77.147:3001';
 
 const movies = ref([]);
 const loading = ref(true);
 const loadError = ref(null);
 
-onMounted(async () => {
-  // 仅在打开时加载，但放在 mounted 中确保只加载一次
-  if (props.isOpen) {
-      await fetchMovies();
-  }
-});
-
 const fetchMovies = async () => {
   loading.value = true;
   loadError.value = null;
   try {
+    // 确保这里的 URL 使用了正确的 IP
     const res = await fetch(`${BACKEND_URL}/api/jellyfin/movies`);
     if (!res.ok) throw new Error('获取影库列表失败');
     movies.value = await res.json();
   } catch (err) {
     console.error(err);
     loadError.value = '无法加载影库，请检查后端连接或 Jellyfin 配置。';
-    // alert(loadError.value); // 避免重复弹出
   } finally {
     loading.value = false;
   }
 };
 
+onMounted(() => {
+    // 首次加载组件时立即获取数据
+    fetchMovies();
+});
 
-const close = () => {
-    // 每次关闭后，如果再次打开需要重新加载（可选）
-    // emit('close');
-    emit('close');
-};
+const close = () => emit('close');
 
 
 const selectMovie = async (movie) => {
@@ -82,7 +75,7 @@ const selectMovie = async (movie) => {
     loadError.value = null;
 
     try {
-        // 1. 通过新的 API 路由获取流 URL (使用 movie.id)
+        // 1. 通过 API 路由获取流 URL (使用 movie.id)
         const res = await fetch(`${BACKEND_URL}/api/jellyfin/stream/${movie.id}`);
         if (!res.ok) throw new Error('获取影片流直链失败');
         
@@ -103,7 +96,7 @@ const selectMovie = async (movie) => {
 </script>
 
 <style scoped>
-/* (样式代码保持不变) */
+/* 完整的样式代码，已包含在内 */
 .library-overlay {
   position: fixed; top: 0; left: 0; right: 0; bottom: 0;
   background: rgba(0, 0, 0, 0.85);
