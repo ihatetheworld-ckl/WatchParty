@@ -30,17 +30,24 @@ app.use('/api/auth', authRoutes); // 将所有 /api/auth 请求转发给认证�
 // ✨ 新增：注册 Jellyfin 路由
 app.use('/api/jellyfin', jellyfinRoute);
 
-// ------------------- 数据库连接 -------------------
+// ------------------- 服务器启动设置 -------------------
+const httpServer = http.createServer(app); // 在 promise 外部定义，以便 module.exports 可以访问
+
+// ------------------- 数据库连接与服务器启动 (FIXED LOGIC) -------------------
 mongoose.connect(MONGO_URI)
-    .then(() => console.log('✅ MongoDB 连接成功'))
-    .catch(err => console.error('❌ MongoDB 连接失败:', err));
+    .then(() => {
+        console.log('✅ MongoDB 连接成功');
 
-// ------------------- 服务器启动 -------------------
-const httpServer = http.createServer(app);
-
-server.listen(PORT, '0.0.0.0', () => { 
-    console.log(`Server running on port ${PORT}`);
-});
+        // 💡 只有连接成功后才启动服务器，并绑定到 '0.0.0.0'
+        httpServer.listen(PORT, '0.0.0.0', () => { 
+            console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
+            console.log(`📢 请使用你的公网 IP 访问：http://13.158.77.147:${PORT}`);
+        });
+    })
+    .catch(err => {
+        console.error('❌ MongoDB 连接失败:', err);
+        process.exit(1); // 如果数据库失败，退出进程
+    });
 
 // 注意：Socket.io 服务将在 index.js 中启动，并监听同一个端口！
 
