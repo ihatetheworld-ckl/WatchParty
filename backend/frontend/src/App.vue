@@ -89,7 +89,7 @@ import Auth from './components/Auth.vue';
 import JellyfinLibrary from './components/JellyfinLibrary.vue'; 
 
 // 🚨 请确保这里是你的 Render 后端地址，与 socket.io 连接地址一致
-const BACKEND_URL = 'https://watchparty-nhd0.onrender.com';
+const BACKEND_URL = 'http://13.158.77.147:3001';
 
 // --- 认证状态 ---
 const showAuth = ref(true); 

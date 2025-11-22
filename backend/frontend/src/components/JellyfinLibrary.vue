@@ -64,7 +64,7 @@ const props = defineProps(['isOpen']);
 const emit = defineEmits(['close', 'select']);
 
 // 🚨 请替换为你的 Render 后端地址 (与 App.vue 中保持一致)
-const BACKEND_URL = 'https://watchparty-nhd0.onrender.com';
+const BACKEND_URL = 'http://13.158.77.147:3001';
 
 const items = ref([]); // 存储 movies 和 series
 const episodes = ref([]); // 存储当前剧集的单集列表
