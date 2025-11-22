@@ -38,6 +38,10 @@ mongoose.connect(MONGO_URI)
 // ------------------- 服务器启动 -------------------
 const httpServer = http.createServer(app);
 
+server.listen(PORT, '0.0.0.0', () => { 
+    console.log(`Server running on port ${PORT}`);
+});
+
 // 注意：Socket.io 服务将在 index.js 中启动，并监听同一个端口！
 
 module.exports = { app, httpServer };
